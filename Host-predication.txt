@@ -1,0 +1,156 @@
+#host prediction
+#Method1: Identify CRISPR arrays in host genomes and match spacers to viral genomes
+conda activate minced #Activate the minced conda environment for CRISPR array detection
+#Concatenate all MAG (Metagenome-Assembled Genome) files into a single FASTA file
+#cat combines multiple FASTA files (*.fa) into one comprehensive host genome file (ALLMAG.fa)
+cat *.fa > ALLMAG.fa
+
+#Detect CRISPR arrays in host genomes using minced tool
+#minced identifies and extracts CRISPR arrays from genomic sequences
+#path/to/MAG.fa specifies the input FASTA file containing host genomes
+#ALL.crisprs specifies the output file containing detected CRISPR sequences
+#ALL.gff specifies the output file in GFF3 format with CRISPR array annotations
+minced path/to/MAG.fa ALL.crisprs ALL.gff
+
+#Extract CRISPR spacer sequences from GFF3 annotations
+#CRISPR.py script parses GFF3 file to extract CRISPR spacer sequences
+#--gff3 path/to/ALL.gff specifies the input GFF3 file with CRISPR annotations
+#--input_fa ALL.fasta specifies the input host genome FASTA file
+#--output_fa ALL_CRISPR.fasta specifies the output FASTA file containing extracted spacers
+python CRISPR.py --gff3 path/to/ALL.gff --input_fa ALL.fasta --output_fa ALL_CRISPR.fasta
+
+#Create a BLAST database from viral genomes for spacer matching
+#makeblastdb creates a searchable database from viral contig sequences
+#-in vOTU.fa specifies the input FASTA file containing viral genomes
+#-dbtype nucl indicates the database contains nucleotide sequences
+#-out vOTUdb specifies the name of the output BLAST database
+makeblastdb -in vOTU.fa -dbtype nucl -out vOTUdb
+
+#Perform BLAST search to match CRISPR spacers against viral genomes
+#blastn searches CRISPR spacer sequences against viral genome database
+#-query ALL_CRISPR.fasta specifies the input file containing CRISPR spacer sequences
+#-db vOTUdb specifies the BLAST database of viral genomes
+#-outfmt 6 sets tabular output format for easy parsing
+#-out blast.tsv specifies the output file for BLAST results
+#-num_threads 32 specifies the number of CPU threads for parallel processing
+blastn -query ALL_CRISPR.fasta -db vOTUdb -outfmt 6 -out blast.tsv -num_threads 32
+#Standard criteria for reliable host-virus linkage via CRISPR spacer matching:
+#1. e-value ≤ 1e-5 (statistically significant match)
+#2. Percentage identity ≥ 95% (high sequence similarity)
+#3. Mismatch count ≤ 2 (few nucleotide mismatches allowed)
+#Spacers meeting these criteria indicate recent infection history and reliable host assignment
+
+###Predict viral hosts using tRNA sequence matching method
+#Method 2: Identify conserved tRNA genes in viral genomes and match to host genomes
+#This method leverages the fact that viruses sometimes carry host-derived tRNA genes
+#Step 1: Predict tRNA genes in viral genomes
+#tRNAscan-SE identifies transfer RNA genes in genomic sequences
+#-G specifies general tRNA model (appropriate for diverse viral sequences)
+#-o tRNA.out specifies the main output file with tRNA predictions
+#-f tRNA.ss specifies the secondary structure output file
+#-m tRNA.stats specifies the statistics output file
+#vOTU.fa specifies the input FASTA file containing viral genomes
+tRNAscan-SE -G -o tRNA.out -f tRNA.ss -m tRNA.stats vOTU.fa
+
+###Step 2: Process tRNA prediction results and extract sequences
+#tRNA.py script parses tRNAscan-SE output to extract tRNA sequences in FASTA format
+#This script converts tRNA predictions to usable sequence files for downstream analysis
+python tRNA-extract.py
+
+#Step 3: Prepare host genome database for comparison
+#Concatenate all MAG (Metagenome-Assembled Genome) files into a single database
+#cat combines multiple host genome FASTA files into one comprehensive file
+cat *.fa > ALL-MAG.fa
+
+#Step 4: Create BLAST database from host genomes
+#makeblastdb creates a searchable nucleotide database from host genome sequences
+#-in path/to/ALL-MAG.fa specifies the input host genome FASTA file
+#-dbtype nucl indicates the database contains nucleotide sequences
+#-out ALLMAGdb specifies the name of the output BLAST database
+makeblastdb -in path/to/ALL-MAG.fa -dbtype nucl -out ALLMAGdb
+
+#Step 5: Perform BLAST search of viral tRNAs against host genome database
+#blastn searches viral tRNA sequences against host genome database
+#-query tRNA.fa specifies the input file containing predicted viral tRNA sequences
+#-db path/to/ALLMAGdb specifies the BLAST database of host genomes
+#-perc_identity 90 sets minimum percentage identity threshold (90%)
+#-outfmt '6 std qlen slen' sets tabular output with standard columns plus query/subject lengths
+#-out tRNA-result.tsv specifies the output file for BLAST results
+blastn -query tRNA.fa -db path/to/ALLMAGdb -perc_identity 90 -outfmt '6 std qlen slen' -out tRNA-result.tsv 
+
+#Step 6: Calculate alignment coverage and similarity metrics
+#anicalc.py computes alignment coverage and identity statistics from BLAST results
+#-i tRNA-result.tsv specifies the input BLAST results file
+#-o tRNA-coverage.tsv specifies the output file with coverage and identity metrics
+python anicalc.py -i tRNA-result.tsv  -o tRNA-coverage.tsv
+
+#Step 7: Identify best host matches for each viral tRNA
+#besthit.py script filters BLAST results to retain only the best match per query
+#blast.txt specifies the input BLAST results file (may be same as tRNA-result.tsv)
+#tRNA-best-hit.tsv specifies the output file containing only best matches
+#This step ensures each viral tRNA is linked to its most likely host origin
+python besthit.py blast.txt tRNA-best-hit.tsv
+
+#Predict viral hosts using shared genomic sequence homology method
+#Method3:  Identify direct sequence similarity between viral and host genomes
+#This method detects conserved genomic regions suggesting evolutionary relationship or recent gene transfer
+#Step 1: Perform BLASTN search of viral genomes against host genome database
+#blastn compares entire viral genomes against host genome sequences
+#-query path/to/vOTU.fa specifies the input FASTA file containing viral genomes
+#-db path/to/ALLMAGdb specifies the BLAST database of host genomes (created in previous step)
+#-perc_identity 70 sets the minimum percentage identity threshold (70% identity)
+#-outfmt 6 sets standard tabular output format for easy parsing
+#-out blastn-result.tsv specifies the output file for BLAST results
+blastn -query path/to/vOTU.fa -db path/to/ALLMAGdb -perc_identity 70 -outfmt 6 -out blastn-result.tsv
+
+#Step 2: Filter and select best host matches for each viral contig
+#besthit.py script processes BLAST results to retain only the best match per query
+#blastn-result.tsv specifies the input BLAST results file
+#blastn-best-hist.tsv specifies the output file containing only best matches
+#This script typically applies additional filtering criteria and selects top-scoring hits
+python besthit.py blastn-result.tsv blastn-best-hist.tsv
+#Standard criteria for reliable host-virus linkage via sequence homology:
+#Alignment length ≥ 2 kbp and Percentage identity ≥ 70%
+
+##Predict viral hosts using integrated phage host prediction (iPHoP) method
+#Method4: Comprehensive machine learning-based host prediction combining multiple lines of evidence
+#Step 1: Perform taxonomic classification of bacterial host genomes using GTDB-Tk
+#gtdbtk de_novo_wf runs the GTDB-Tk workflow for taxonomic classification
+#--genome_dir path/to/drep/Bacteria_MAG/ specifies the directory containing dereplicated bacterial genomes
+#--bacteria indicates the input genomes are from the bacterial domain
+#--outgroup_taxon p__Patescibacteria specifies the outgroup taxon for rooting the tree
+#--out_dir MAGs_GTDB-tk_results/ specifies the output directory for GTDB-Tk results
+#--cpus 40 specifies the number of CPU cores to use
+#--force overwrites existing output files
+#--extension fa specifies the file extension of input genome files
+gtdbtk de_novo_wf --genome_dir path/to/drep/Bacteria_MAG/ --bacteria --outgroup_taxon p__Patescibacteria --out_dir MAGs_GTDB-tk_results/ --cpus 40 --force --extension fa
+
+#Step 2: Perform taxonomic classification of archaeal host genomes using GTDB-Tk
+#Similar command for archaeal genomes with appropriate domain specification
+#--archaea indicates the input genomes are from the archaeal domain
+#--outgroup_taxon p__Altiarchaeota specifies an archaeal outgroup taxon
+gtdbtk de_novo_wf --genome_dir path/to/drep/Archaea_MAG/ --archaea --outgroup_taxon p__Altiarchaeota --out_dir MAGs_GTDB-tk_results/ --cpus 40 --force --extension fa
+
+#Step 3: Build custom host database for iPHoP by adding MAGs to reference database
+#iphop add_to_db adds user genomes to the iPHoP reference database
+#--fna_dir path/to/drep/ALL-MAGs/ specifies the directory containing all host genomes in FASTA format
+#--gtdb_dir add_to_db/ specifies the directory containing GTDB-Tk classification results
+#--out_dir HostsDB specifies the output directory for the custom host database
+#--db_dir /path/to/iphop_db/Sept_2021_pub_rw/ specifies the path to the iPHoP reference database
+#This step integrates your MAGs with the pre-existing iPHoP database for improved host prediction
+iphop add_to_db --fna_dir path/to/drep/ALL-MAGs/ --gtdb_dir add_to_db/ --out_dir HostsDB --db_dir /path/to/iphop_db/Sept_2021_pub_rw/
+
+#Step 4: Predict hosts for viral genomes using the iPHoP database
+#iphop predict runs the host prediction algorithm on viral sequences
+#--fa_file path/to/vOTUs.fasta specifies the input FASTA file containing viral genomes
+#--db_dir path/to/HostsDB specifies the directory containing the custom host database
+#--out_dir Host_predict_result specifies the output directory for prediction results
+#-t 20 specifies the number of CPU threads to use
+iphop predict --fa_file path/to/vOTUs.fasta --db_dir path/to/HostsDB --out_dir Host_predict_result -t 20
+
+#Method5: Oligonucleotide frequency
+#This method assumes that viruses and their hosts share similar genomic signatures due to co-evolution
+
+python path/to/VirHostMatcher/vhm.py -v path/to/vOTUs -b path/to/host -o VHM_result -d 1
+#Standard: Best matches with d2* values < 0.25 were retained
+python d2star.py

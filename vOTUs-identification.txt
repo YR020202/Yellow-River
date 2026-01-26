@@ -1,0 +1,152 @@
+### Quality control
+# Activate the fastp environment. fastp is a tool for high - throughput sequencing data quality control.
+conda activate fastp
+# Use fastp to perform quality control on raw sequencing data.
+# -i specifies the path of the forward raw sequencing file.
+# -I specifies the path of the reverse raw sequencing file.
+# -o specifies the output path of the forward cleaned data after processing.
+# -O specifies the output path of the reverse cleaned data after processing.
+fastp -i path/to/Rawreads_1.fq.gz -I path/to/Rawreads_2.fq.gz \
+-o path/to/CleanReads_1.fq -O path/to/CleanReads_2.fq
+
+### Assembly
+# Activate the megahit environment. megahit is a tool for metagenomic assembly.
+conda activate megahit
+# Use megahit to assemble the raw sequencing data.
+# -1 specifies the path of the forward raw sequencing file.
+# -2 specifies the path of the reverse raw sequencing file.
+# -o specifies the output directory for the assembly results.
+# --min - contig - len specifies the minimum contig length, set to 1500 here.
+# -t specifies the number of threads to use, which is 40.
+megahit -1 path/to/Rawreads_1.fq -2 path/to/Rawreads_2.fq \ 
+-o path/to/Assembly --min-contig-len 1500 -t 40 --kmin 21 --kmax 141
+
+### vOTUs identification
+#Acquire ≥ 5000bp contigs using seqkit
+#--remove-gaps removes all gap characters (e.g., '-', '.', '~') from sequences
+#-m 5000 keeps only sequences with length >= 5000 bp
+#path/to/contigs.fasta specifies the input FASTA file containing contigs
+#> redirects the output to a new file: path/to/contigs_5000.fa
+seqkit seq --remove-gaps -m 5000 path/to/contigs.fasta > path/to/contigs_5000.fa
+
+###  Visorter2
+#Run VirSorter2 to identify viral sequences from metagenomic contigs (≥ 5000bp)
+#virsorter run is the main command for running the VirSorter2 pipeline
+#-w specifies the output directory where results will be stored
+#-i specifies the input FASTA file containing contigs (filtered to >=5000 bp)
+#--keep-original-seq preserves the original sequences in the output
+#-j specifies the number of CPU threads to use, which is 40
+#all indicates the analysis mode: comprehensive identification including both dsDNA and ssDNA viruses
+virsorter run  -w path/to/VS_result -i path/to/contigs_5000.fa --keep-original-seq -j 40 all
+
+### DeepVirFinder
+#Run DeepVirFinder for viral sequence prediction
+#dvf.py is the main script of DeepVirFinder, a deep learning-based tool for viral contig identification
+#-i specifies the input FASTA file containing contigs (filtered to >=5000 bp)
+#-o specifies the output directory for storing prediction results
+#-l sets the minimum sequence length threshold for analysis (5000 bp in this case)
+python dvf.py -i path/to/contigs_5000.fa -o path/to/DVF_result -l 5000
+
+### Vibrant
+#Run VIBRANT for comprehensive viral genome identification and annotation
+#VIBRANT_run.py is the main script of VIBRANT (Virus Identification By iteRative ANnoTation)
+#-i specifies the input FASTA file containing contigs (filtered to >=5000 bp)
+#-t specifies the number of CPU threads to use, which is 40
+#VIBRANT performs protein prediction, database searches, and machine learning to identify viral contigs
+#and predict viral life cycles, host information, and auxiliary metabolic genes
+python VIBRANT_run.py -i path/to/contigs_5000.fa -t 40
+
+#Method1：score ≥ 0.7 and had hallmark genes of VirSorter2
+#Method2：identified by VirSorter2 (score ≥ 0.5), DeepVirFinder (score ≥ 0.7 and p ≤ 0.05), and VIBRANT simultaneously.
+#Method3：identified by any two of VirSorter2 (score ≥ 0.5), DeepVirFinder (score ≥ 0.7 and p ≤ 0.05), and VIBRANT, and 
+further screened by CheckV with at least one viral hallmark gene.
+
+### extract.py
+# The following is a Python script for extracting sequences with specific IDs from a nucleic acid sequence file.
+from Bio import SeqIO
+# Open a file for writing the extracted sequences.
+result= open('Method.fa', 'w')
+# Initialize an empty dictionary for storing the IDs of the sequences to be extracted.
+a={}
+# Open the file containing the IDs of the sequences to be extracted.
+f=open('Method-ID.txt', 'r')
+# Read the ID file line by line.
+for line in f:
+    # Store the read ID as a key in the dictionary after removing leading and trailing whitespace.
+    a[line.strip()]=1
+# Close the ID file.
+f.close()
+# Parse the nucleic acid sequence file line by line.
+for seq_record in SeqIO.parse('contigs_5000.fasta', 'fasta'):
+    # Check if the ID of the current sequence is in the dictionary.
+    if str(seq_record.id) in a:
+        # If it exists, write the description information of the sequence to the result file.
+        result.write('>'+str(seq_record.description)+'\n')
+        # Write the sequence itself to the result file.
+        result.write(str(seq_record.seq)+'\n')
+# Close the result file.
+result.close()
+# Print a prompt message indicating that the operation is completed.
+print('ok')
+
+# python
+# Execute the Python script.
+#Acquire Method1.fa, Method2.fa, and Method3-non-checkv.fa
+python extract.py
+
+###CheckV
+#Run CheckV for viral hallmark gene identification
+#checkv end_to_end runs the complete CheckV pipeline for quality evaluation
+#checkv-viral specifies the output directory where CheckV results will be stored
+#-t specifies the number of CPU threads to use, which is 40
+checkv end_to_end Method3-non-checkv.fa checkv-viral -t 40
+#Standard: At least one viral hallmark gene in viral contigs.
+# Execute the Python script to acquire Method3.fa
+python extract.py
+#Concatenate multiple viral prediction results into a single FASTA file
+cat Method1.fa Method2.fa Method3.fa > ALL.fa
+
+#Proviral regions removal 
+#Acquire ALL_clean.fa
+checkv end_to_end ALL.fa checkv-viral -t 40
+
+###Cluster viral contigs to identify viral operational taxonomic units (vOTUs)
+#Step 1: Create a BLAST database from all cleaned viral contigs
+#makeblastdb creates a BLAST-searchable database from the input FASTA file
+#-in specifies the input FASTA file containing all cleaned viral contigs
+#-dbtype nucl indicates the database contains nucleotide sequences
+#-out specifies the name of the output database (virusesdb)
+makeblastdb -in path/to/ALL_clean.fa -dbtype nucl -out virusesdb
+
+#Step 2: Perform all-vs-all BLASTN comparison of viral contigs
+#blastn compares each viral contig against the entire viral contig database
+#-query specifies the query FASTA file (same as database input for self-comparison)
+#-db specifies the BLAST database to search against
+#-outfmt '6 std qlen slen' sets tabular output format with standard columns plus query and subject lengths
+#-max_target_seqs 10000 sets maximum number of target sequences to report per query
+#-out blast.tsv specifies the output file for BLAST results
+#-num_threads 32 specifies the number of CPU threads to use for parallel processing
+blastn -query ALL_clean.fa -db virusesdb -outfmt '6 std qlen slen' -max_target_seqs 10000 -out blast.tsv -num_threads 32
+
+#Step 3: Calculate Average Nucleotide Identity (ANI) values from BLAST results
+#anicalc.py computes ANI values based on BLAST alignment results
+#-i blast.tsv specifies the input BLAST results file
+#-o ani.tsv specifies the output file for ANI values
+python anicalc.py -i blast.tsv -o ani.tsv
+
+#Step 4: Cluster viral contigs based on ANI and coverage thresholds
+#aniclust.py performs clustering of viral contigs using ANI and coverage criteria
+#--fna ALL_clean.fa specifies the input FASTA file of viral contigs
+#--ani ani.tsv specifies the input ANI values file
+#--out clusters.tsv specifies the output file for cluster assignments
+#--min_ani 95 sets the minimum ANI threshold for clustering (95%)
+#--min_tcov 85 sets the minimum target coverage threshold (85%)
+#--min_qcov 0 sets the minimum query coverage threshold (0%, typically not used)
+python aniclust.py --fna ALL_clean.fa --ani ani.tsv --out clusters.tsv --min_ani 95 --min_tcov 85 --min_qcov 0
+#obtain vOTUs.fa based on contig ID from clusters.tsv
+
+#Step 5: Extract representative sequences for each vOTU cluster
+#extract.py extracts representative contigs based on cluster assignments
+#This script typically selects the longest or highest-quality contig from each cluster
+#The output is a FASTA file containing one representative sequence per vOTU (vOTUs.fa)
+python extract.py 

@@ -1,0 +1,72 @@
+### Quality control
+# Activate the fastp environment. fastp is a tool for high - throughput sequencing data quality control.
+conda activate fastp
+# Use fastp to perform quality control on raw sequencing data.
+# -i specifies the path of the forward raw sequencing file.
+# -I specifies the path of the reverse raw sequencing file.
+# -o specifies the output path of the forward cleaned data after processing.
+# -O specifies the output path of the reverse cleaned data after processing.
+fastp -i path/to/Rawreads_1.fq.gz -I path/to/Rawreads_2.fq.gz \
+-o path/to/CleanReads_1.fq -O path/to/CleanReads_2.fq
+
+### Assembly
+# Activate the megahit environment. megahit is a tool for metagenomic assembly.
+conda activate megahit
+# Use megahit to assemble the raw sequencing data.
+# -1 specifies the path of the forward raw sequencing file.
+# -2 specifies the path of the reverse raw sequencing file.
+# -o specifies the output directory for the assembly results.
+# --min - contig - len specifies the minimum contig length, set to 1500 here.
+# -t specifies the number of threads to use, which is 40.
+megahit -1 path/to/Rawreads_1.fq -2 path/to/Rawreads_2.fq \ 
+-o path/to/Assembly --min-contig-len 1500 -t 40 --kmin 21 --kmax 141
+
+### bowtie2
+# Activate the bowtie2 environment. bowtie2 is a tool for aligning sequencing data to a reference genome.
+conda activate bowtie2
+# Change to the directory where the assembly results are located.
+cd path/to/Assembly
+### biuld index
+# Build an index for subsequent alignment operations.
+# bowtie2 - build is used to build an index of the reference genome.
+# final.contigs.fa is the contig file obtained from the assembly.
+# genome is the name of the index.
+bowtie2-build final.contigs.fa genome
+
+### Mapping
+# Perform the alignment operation.
+# nohup is used to run the command in the background so that it will not stop even if the terminal is closed.
+# -x specifies the prefix of the index file.
+# -1 specifies the path of the forward cleaned data file.
+# -2 specifies the path of the reverse cleaned data file.
+# -S specifies the output path of the SAM file.
+# -p specifies the number of threads to use, which is 20.
+# & indicates that the command should be executed in the background.
+nohup bowtie2 -x genome -1 path/to/CleanReads_1.fq -2 path/to/CleanReads_2.fq \ 
+-S path/to/sample.sam -p 20 &
+
+### samtools
+# Activate the samtools environment. samtools is a tool for processing SAM/BAM files.
+conda activate samtools
+# Convert the SAM file to a BAM file.
+# -@ specifies the number of threads to use, which is 40.
+# -bS indicates that the input is a SAM file and the output is a BAM file.
+samtools view -@ 100 -bS path/to/sample.sam > path/to/sample.bam
+# Sort the BAM file.
+# -o specifies the output path of the sorted BAM file.
+# -@ specifies the number of threads to use, which is 40.
+samtools sort path/to/sample.bam -o path/to/sample.sorted -@ 40
+
+### Metabat2
+# Activate the metabat2 environment. metabat2 is a tool for metagenomic binning.
+conda activate metabat2
+# Calculate the depth information of contigs.
+# --outputDepth specifies the name of the file to output the depth information.
+# path/to/sample.sorted is the path of the sorted BAM file.
+jgi_summarize_bam_contig_depths --outputDepth depth.txt path/to/sample.sorted
+# Perform the binning operation.
+# -i specifies the input path of the contig file.
+# -a specifies the path of the depth information file.
+# -o specifies the output directory for the binning results.
+metabat2 -i path/to/final.contigs.fasta -m 1500 -a depth.txt -o bins/SampleName
+

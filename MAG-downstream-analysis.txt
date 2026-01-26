@@ -1,0 +1,67 @@
+### cp
+# Copy all FA files obtained from binning to the specified directory.
+# -f forces overwriting of target files.
+# -r recursively copies directories.
+# -a preserves file attributes.
+cp -frap path/to/bins/*.fa  path/to/ALLMAGs
+
+### dRep
+# Activate the dRep environment. dRep is a tool for metagenomic dereplication.
+conda activate dRep
+# Perform metagenomic dereplication.
+# dereplicate is the dereplication sub - command of dRep.
+# -g specifies the input path of the FA files.
+# -comp specifies the minimum completeness as 50%.
+# -con specifies the maximum contamination as 10%.
+dRep dereplicate drep -g path/to/ALLMAG/*.fa -comp 50 -con 10
+
+### CheckM
+# Activate the checkm environment. checkm is a tool for evaluating the quality of metagenomic bins.
+conda activate checkm
+# Evaluate the quality of the dereplicated genomes.
+# lineage_wf is the workflow sub - command of checkm.
+# --tab_table outputs the results in tabular form.
+# -x specifies the extension of the input files.
+# path/to/drep/dereplicated_genomes is the directory of the dereplicated genomes.
+# checkm_out is the output directory for the results.
+# -t specifies the number of threads to use, which is 40.
+# -f specifies the name of the output file.
+# -a specifies the algorithm to use.
+checkm lineage_wf --tab_table -x fa path/to/drep/dereplicated_genomes \
+checkm_out -t 40 -f checkm -a AAI
+
+### GTDBtk
+# Activate the gtdbtk environment. gtdbtk is a tool for metagenomic classification.
+conda activate gtdbtk
+# Classify the dereplicated genomes.
+# classify_wf is the classification workflow sub - command of gtdbtk.
+# --genome_dir specifies the input directory of the genomes.
+# --out_dir specifies the output directory for the results.
+# --extension specifies the extension of the input files.
+# --cpu specifies the number of CPU cores to use, which is 20.
+gtdbtk classify_wf --genome_dir path/to/drep/dereplicated_genomes  \
+--out_dir path/to/tax_out --extension fa --cpu 20
+
+### METABOLIC
+# Activate the METABOLIC environment. METABOLIC is a tool for metagenomic functional annotation.
+conda activate METABOLIC
+# Change to the directory where the METABOLIC tool is located.
+cd path/to/METABOLIC
+# Use METABOLIC to perform functional annotation on the dereplicated genomes.
+# -in - gn specifies the input directory of the genomes.
+# -p specifies the processing mode as single - sample.
+# -o specifies the output directory for the results.
+perl METABOLIC-G.pl -in-gn path/to/drep/dereplicated_genomes -p single -o path/to/Function
+
+### coverM
+# Activate the coverm environment. coverm is a tool for calculating genome coverage.
+conda activate coverm
+# Calculate the coverage of the dereplicated genomes.
+# genome is the sub - command of coverm.
+# --coupled specifies the use of paired - end sequencing data.
+# --genome - fasta - directory specifies the input directory of the genomes.
+# -o specifies the output path of the results file.
+# --threads specifies the number of threads to use, which is 40.
+#--methods trimmed_mean Average number of aligned reads overlapping each position after removing the most deeply and shallow-ly covered positions.
+coverm genome --methods trimmed_mean --coupled path/to/CleanReads_1.fq path/to/CleanReads_2.fq \
+--genome-fasta-directory path/to/drep/dereplicated_genomes -o SampleName.tsv --threads 40

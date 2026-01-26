@@ -1,0 +1,32 @@
+#Phylogenomic tree
+#Activate the phylophlan environment. PhyloPhlan is a tool for high-resolution phylogenomic analysis of microbial genomes.
+#Predict protein-coding genes from the dereplicated MAG using Prodigal.
+#-i specifies the input genome FASTA file.
+#-a specifies the output protein FASTA file.
+#-p single indicates that the genome is from a single organism (not metagenomic mode).
+prodigal -i path/to/dereplicated_genomes/MAG.fasta -a MAG-protein-file/MAG.faa  -p single
+
+#Run PhyloPhlan to build a phylogenomic tree using the predicted proteins.
+#-i specifies the input directory containing protein FASTA files (one per genome).
+#-d specifies the path to the PhyloPhlan reference database.
+#-f specifies the configuration file for the tree-building process (tol2.cfg for a broad microbial tree).
+#--diversity high indicates the input contains highly diverse genomes.
+#--accurate enables more accurate but computationally intensive alignment.
+#-o specifies the output directory for the phylogenomic tree and intermediate files.
+#--nproc specifies the number of CPU cores to use, which is 40.
+phylophlan -i path/to/MAG-protein-file -d path/to/miniconda3/envs/phylophlan/phylophlan_database/phylophlan -f path/to/miniconda3/envs/phylophlan/tol2.cfg \
+ --diversity high --accurate -o path/to/Phylogenomic-tree --nproc 40
+
+#Trim the multiple sequence alignment (MSA) produced by PhyloPhlan using TrimAl.
+#-in specifies the input concatenated alignment file.
+#-out specifies the output trimmed alignment file.
+#-gt 0.95 removes columns with more than 95% gaps.
+#-cons 50 removes columns with less than 50% conservation (i.e., too variable).
+trimal -in path/to/Phylogenomic-tree/concatenated.aln -out path/to/Phylogenomic-tree/concatenated-trimal.aln.fa -gt 0.95 -cons 50
+
+#Build a maximum-likelihood phylogenetic tree from the trimmed alignment using IQ-TREE.
+#-s specifies the input trimmed alignment file.
+#-m MFP enables ModelFinder to select the best-fit substitution model automatically (based on BIC value).
+#-bb 1000 specifies ultrafast bootstrap with 1000 replicates for branch support.
+#-nt specifies the number of CPU cores to use, which is 40.
+iqtree -s path/to/Phylogenomic-tree/concatenated-trimal.aln.fa -m MFP -bb 1000 -nt 40
