@@ -17,7 +17,7 @@ setwd("D:/WYR/PcoA_analysis")
 rm(list = ls())
 
 # Read the abundance table (rows = MAGs/vOTUs, columns = samples)
-abundance_table <- read.csv("SMAGhost.csv", row.names = 1)
+abundance_table <- read.csv("vOTUs.csv", row.names = 1)
 
 # Read metadata (rows = samples, columns = sample attributes)
 metadata <- read.csv("metadata.csv", row.names = 1)
