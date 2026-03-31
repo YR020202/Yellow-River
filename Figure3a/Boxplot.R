@@ -73,7 +73,7 @@ p <- ggplot(data_long, aes(x = Phylum, y = Abundance, fill = Group)) +
   labs(
     title = "Viral phylum abundance across habitats",
     x = "Phylum",
-    y = "Relative abundance (%)",
+    y = "Abundance",
     fill = "Habitat",
     color = "Habitat"
   ) +
