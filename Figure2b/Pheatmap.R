@@ -6,7 +6,6 @@
 # Load required libraries
 library(ggplot2)   # (Not directly used but often loaded alongside pheatmap for plotting)
 library(pheatmap)  # For creating annotated heatmaps
-library(vegan)     # (May be used for ecological analyses, not directly in this heatmap)
 
 # Read the abundance data (rows = vOTU families, columns = samples)
 data <- read.table("vOTU_Famliy_abundance.txt", header = TRUE, sep = "\t", row.names = 1)
