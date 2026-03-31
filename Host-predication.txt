@@ -149,8 +149,9 @@ iphop add_to_db --fna_dir path/to/drep/ALL-MAGs/ --gtdb_dir add_to_db/ --out_dir
 iphop predict --fa_file path/to/vOTUs.fasta --db_dir path/to/HostsDB --out_dir Host_predict_result -t 20
 
 #Method5: Oligonucleotide frequency
+# Split a multi‑FASTA file (vOTU.fa) into individual FASTA files, each containing a single sequence
+python split.py
 #This method assumes that viruses and their hosts share similar genomic signatures due to co-evolution
-
-python path/to/VirHostMatcher/vhm.py -v path/to/vOTUs -b path/to/host -o VHM_result -d 1
+python path/to/VirHostMatcher/vhm.py -v path/to/vOTU_Folder -b path/to/host_Folder -o VHM_result -d 1
 #Standard: Best matches with d2* values < 0.25 were retained
 python d2star.py
