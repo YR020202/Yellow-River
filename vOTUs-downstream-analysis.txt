@@ -20,125 +20,6 @@ prodigal -i path/to/vOTUs.fasta -a vOTUs.faa -d  vOTUs.fna  -p meta
 #-o specifies the output file containing representative sequences of protein clusters
 cd-hit -c 0.6 -aS 0.8 -n 4 -g 1 -i path/to/vOTU.faa -o path/to/vPCs.faa
 
-###Classify vOTUs using CAT_pack
-#Step 1: Prepare the protein reference database for taxonomic classification
-#CAT_pack prepare sets up the reference database required for CAT classification
-#--db_fasta specifies the reference protein FASTA file from NCBI viral database
-#--names specifies the NCBI taxonomy names file (contains scientific names and synonyms)
-#--nodes specifies the NCBI taxonomy nodes file (defines taxonomic tree structure)
-#--acc2tax specifies the protein accession to taxonomy ID mapping file
-#--db_dir specifies the output directory where the prepared database will be stored
-CAT_pack prepare \
---db_fasta path/to/NCBI_Ref/2025-04-21.viral.1.protein.faa \
---names path/to/NCBI_Ref/dbnr/names.dmp \
---nodes path/to/NCBI_Ref/dbnr/nodes.dmp \
---acc2tax path/to/NCBI_Ref/dbnr/2025-04-21.prot.accession2taxid.FULL.gz \
---db_dir path/to/NCBI_Ref/viraldb
-
-#Step 2: Perform taxonomic classification of viral contigs
-#CAT_pack contigs runs the main classification workflow on viral genomes
-#-c specifies the input FASTA file containing vOTU sequences
-#-d specifies the directory of the prepared protein reference database
-#-t specifies the directory containing NCBI taxonomy files
-#Output includes ORF predictions, diamond alignments, and LCA assignments
-CAT_pack contigs -c path/to/vOTU.fa -d path/to/NCBI_Ref/viraldb -t path/to/NCBI_Ref/tax
-
-#Step 3: Add taxonomic names to the classification results
-#CAT_pack add_names enhances the classification output with full taxonomic names
-#-i specifies the input classification file (output from CAT_pack contigs)
-#-o specifies the output file with enhanced taxonomic information
-#-t specifies the directory containing NCBI taxonomy files
-#--only_official restricts output to official taxonomic names only (no synonyms)
-CAT_pack add_names -i path/to/out.CAT.ORF2LCA.txt -o Tax_classification.txt -t path/to/NCBI_Ref/tax --only_official
-
-#Step 4: Filter taxonomic classification results to retain highest-scoring hits per contig
-#tax-filter.py script processes CAT classification output to select best matches
-#This script reads taxonomic classification results and retains only the top-scoring hit for each contig
-#Import required Python libraries
-import csv  # For reading and writing tab-delimited files
-import sys  # For system operations and error handling
-from collections import defaultdict # For creating dictionaries with default values
-
-
-def process_and_write(input_file, output_file):
-# Dictionary to store contig groups, keyed by contig prefix
-    groups = defaultdict(list)
-    header = None
-
-# Read input file
-    with open(input_file, 'r', newline='', encoding='utf-8') as f:
-        lines = f.readlines()
-        if not lines:
-            print("none")
-            return
-
-# Parse header line (assumes tab-separated format)
-        header = lines[0].strip().split('\t')
-        if header[0] != '# ORF':
-            raise ValueError("First column of input file must be '# ORF'")
-
-# Process each classification record
-        for line in lines[1:]:
-            line = line.strip()
-            if not line:
-                continue
-
-# Parse tab-separated values into dictionary
-            parts = line.split('\t')
-            row = {header[i]: parts[i] for i in range(len(parts))}
-            print(row)
-
-# Extract ORF identifier
-            orf = row['# ORF']
-
-# Extract contig prefix from ORF identifier
-# Format: contigID_ORFnumber
-            if 'ORF has no hit to database' in orf:
-                prefix = orf
-            else:
-                parts_orf = orf.split('_', 2)
-                prefix = parts_orf[0] + '_' + parts_orf[1]
-
-# Extract bit-score for ranking (higher score = better match)
-            try:
-                if 'top bit-score' in row:
-                    score = row['top bit-score']
-                    numeric_score = float(score) if '.' in score else int(score)
-                else:
-                    numeric_score = None
-            except ValueError:
-                numeric_score = None
-# Store row with its contig prefix
-            groups[prefix].append((row, numeric_score))
-# Select best hit for each contig
-    result = []
-    for prefix, rows in groups.items():
-# Filter rows with valid scores
-        valid_rows = [(r, s) for r, s in rows if s is not None]
-        if valid_rows:
-# Sort by score in descending order and select top hit
-            valid_rows.sort(key=lambda x: x[1], reverse=True)
-            result.append(valid_rows[0][0])
-        else:
-# If no valid scores, select first row
-            result.append(rows[0][0])
-# Write filtered results to output file
-    with open(output_file, 'w', newline='', encoding='utf-8') as f:
-        writer = csv.DictWriter(f, fieldnames=header, delimiter='\t')
-        writer.writeheader()
-        for row in result:
-            writer.writerow(row)
-
-if __name__ == '__main__':
-# Define input and output file paths
-    input_file = 'Tax_classification.txt' # Input file from CAT classification
-    output_file = 'Tax_classification_filter.txt' # Output filtered file
-# Execute the filtering process
-    process_and_write(input_file, output_file)
-    print(f"Processing complete. Results written to {output_file}")
-#Execute the Python script to filter taxonomic classification results
-python tax-filter.py
-
 #Identify auxiliary metabolic genes (AMGs) in viral genomes
 #emapper.py performs functional annotation using eggNOG database
 #-m diamond specifies the alignment method (DIAMOND for fast protein alignment)
@@ -157,7 +38,17 @@ emapper.py \
 --dmnd_db path/to/eggnogdb2/eggnog_proteins.dmnd \
 --output_dir /home/metagenomes/LILU/S_ALL_Test/blastdb/eggnog -o vOTU --evalue 0.00001 --score 50
 
+# Validate and complement eggNOG-mapper functional annotations using METABOLIC
+# METABOLIC-G.pl performs comprehensive metabolic and biogeochemical functional profiling of viral genomes
+# -in-gn specifies the input directory containing vOTU sequence files (FASTA format)
+# -p meta activates metagenome mode with optimized parameters for complex microbial communities
+# -o specifies the output directory for all METABOLIC result files, including functional profiles and pathway summaries
+# This command enables systematic identification of virus-encoded metabolic genes, including auxiliary metabolic genes (AMGs),
+# and cross-validates the functional predictions derived from eggNOG-mapper to ensure high-confidence annotation
+METABOLIC-G.pl -in-gn path/to/vOTU_Folder -p meta -o path/to/vOTU_Function
+
 #Viral hallmark gene identification
+#Taxonomic classification of vOTUs
 #Identify viral hallmark genes and classify viral sequences
 #genomad end-to-end runs the complete geNomad pipeline for viral sequence analysis
 #--cleanup removes intermediate files to save disk space after analysis
@@ -170,8 +61,25 @@ genomad end-to-end --cleanup --splits 8 path/to/vOTU.fa genomad_output path/to/g
 #Lifestyle prediction
 VIBRANT_run.py -i path/to/vOTU.fa -t 40 
 
-#vOTUs abundance
-coverm contig --methods trimmed_mean --coupled Clean_reads_R1.fq  Clean_reads_R2.fq --reference vOTU.fna -o Abundance_sample_ID.tsv --threads 40
+# Quantify vOTU abundance profiles using CoverM
+# coverm contig calculates coverage metrics for each vOTU based on read mapping
+# --methods trimmed_mean specifies the trimmed mean coverage (default 10% trim) to reduce bias from outlier positions
+# --coupled provides the paired-end clean read files (R1 and R2) for read mapping
+# --reference points to the FASTA file containing all vOTU reference sequences
+# -o defines the output file path for the resulting abundance matrix (TSV format)
+# --threads 40 enables parallel processing using 40 CPU cores
+# This command generates reliable vOTU relative abundance estimates for downstream ecological analyses
+coverm contig --methods trimmed_mean --coupled Clean_reads_R1.fq Clean_reads_R2.fq --reference vOTU.fasta -o Abundance_sample_ID.tsv --threads 40
+
+# Calculate vOTU coverage breadth using CoverM
+# coverm contig computes the fraction of each vOTU reference covered by mapped reads
+# --methods covered_fraction specifies the coverage breadth metric (proportion of bases with ≥1 read)
+# --coupled provides the paired-end clean read files (R1 and R2) for read mapping
+# --reference points to the FASTA file containing all vOTU reference sequences
+# -o defines the output file path for the resulting breadth matrix (TSV format)
+# --threads 40 enables parallel processing using 40 CPU cores
+# This command determines viral presence (coverage breadth ≥70%) and filters false positives from cross‑mapping noise
+coverm contig --methods covered_fraction --coupled Clean_reads_R1.fq Clean_reads_R2.fq --reference vOTU.fasta  -o Fraction_sample_ID.tsv --threads 40
 
 #Viral gene sharing network
 vcontact2 --raw-proteins path/to/ALL.faa --proteins-fp path/to/G2G.csv --db 'ProkaryoticViralRefSeq211-Merged' --output-dir vcontact2_result
